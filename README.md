@@ -2,7 +2,7 @@
 
 Download files from Zenodo repositories (public, restricted, or draft).
 
-<img src="media/terminal_capture.png" width="450">
+<img src="media/terminal_capture_v1_4_4.png" width="450">
 
 
 ## Features
