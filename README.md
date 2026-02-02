@@ -109,7 +109,7 @@ rm zenodo_dl.sh             # delete the script
 
 ### Optional: Add to PATH
 
-To run `zenodo_dl` from anywhere:
+To run `zenodo_dl` from anywhere, go to your install dir and:
 ```bash
 ln -s "$(pwd)/zenodo_dl.sh" ~/.local/bin/zenodo_dl
 ```
