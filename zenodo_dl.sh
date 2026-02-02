@@ -7,9 +7,10 @@
 
 set -euo pipefail
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 API_BASE="https://zenodo.org/api"
 TOKEN_FILE="$HOME/.zenodo_token"
+TOKEN_FILE_ENC="$HOME/.zenodo_token.enc"
 TOKEN=""
 RECORD_ID=""
 
@@ -45,7 +46,7 @@ zenodo_dl.sh v${VERSION} — Download files from Zenodo repositories
 USAGE
     ./zenodo_dl.sh [RECORD_ID]     Interactive mode
     ./zenodo_dl.sh --help          Show this help
-    ./zenodo_dl.sh --uninstall     Remove stored token (~/.zenodo_token)
+    ./zenodo_dl.sh --uninstall     Remove stored token(s)
 
 EXAMPLES
     ./zenodo_dl.sh                 Prompt for record ID
@@ -55,11 +56,11 @@ EXAMPLES
 RUN WITHOUT DOWNLOADING
     bash <(curl -fsSL https://raw.githubusercontent.com/mbz4/zenodo_dl/main/zenodo_dl.sh)
 
-TOKEN
-    For restricted/draft records, get a token from:
-    https://zenodo.org/account/settings/applications/
-    
-    Required scope: deposit:read
+TOKEN STORAGE
+    Tokens can be stored encrypted (AES-256, passphrase required each use)
+    or plaintext (chmod 600). Encrypted is the default.
+
+    Files: ~/.zenodo_token.enc (encrypted) or ~/.zenodo_token (plaintext)
 
 MORE INFO
     https://github.com/mbz4/zenodo_dl
@@ -69,15 +70,22 @@ EOF
 
 do_uninstall() {
     echo ""
+    local removed=0
+    if [[ -f "$TOKEN_FILE_ENC" ]]; then
+        rm -f "$TOKEN_FILE_ENC"
+        success "Removed $TOKEN_FILE_ENC"
+        ((removed++))
+    fi
     if [[ -f "$TOKEN_FILE" ]]; then
         rm -f "$TOKEN_FILE"
         success "Removed $TOKEN_FILE"
-    else
-        info "No token file found at $TOKEN_FILE"
+        ((removed++))
+    fi
+    if [[ $removed -eq 0 ]]; then
+        info "No token files found"
     fi
     echo ""
-    info "To fully remove zenodo_dl, just delete the script file."
-    echo "    rm ./zenodo_dl.sh  (or wherever you saved it)"
+    info "To fully remove, delete the script: rm ./zenodo_dl.sh"
     echo ""
     exit 0
 }
@@ -88,7 +96,7 @@ do_uninstall() {
 
 check_dependencies() {
     local missing=()
-    for cmd in curl jq; do
+    for cmd in curl jq openssl; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -130,7 +138,70 @@ get_record_id() {
 }
 
 # -----------------------------------------------------------------------------
-# Token
+# Token encryption
+# -----------------------------------------------------------------------------
+
+encrypt_token() {
+    local token="$1"
+    local passphrase="$2"
+    echo "$token" | openssl enc -aes-256-cbc -pbkdf2 -salt -pass pass:"$passphrase" -base64
+}
+
+decrypt_token() {
+    local passphrase="$1"
+    openssl enc -aes-256-cbc -pbkdf2 -d -salt -pass pass:"$passphrase" -base64 < "$TOKEN_FILE_ENC" 2>/dev/null
+}
+
+save_token_encrypted() {
+    local token="$1"
+    echo ""
+    while true; do
+        read -rsp "  Create passphrase: " pass1
+        echo ""
+        read -rsp "  Confirm passphrase: " pass2
+        echo ""
+        if [[ "$pass1" == "$pass2" ]]; then
+            if [[ -z "$pass1" ]]; then
+                warn "Passphrase cannot be empty"
+            else
+                break
+            fi
+        else
+            warn "Passphrases don't match"
+        fi
+    done
+
+    encrypt_token "$token" "$pass1" > "$TOKEN_FILE_ENC"
+    chmod 600 "$TOKEN_FILE_ENC"
+    success "Saved encrypted to $TOKEN_FILE_ENC"
+}
+
+save_token_plaintext() {
+    local token="$1"
+    echo "$token" > "$TOKEN_FILE"
+    chmod 600 "$TOKEN_FILE"
+    success "Saved to $TOKEN_FILE (plaintext, chmod 600)"
+}
+
+load_token_encrypted() {
+    local attempts=0
+    while [[ $attempts -lt 3 ]]; do
+        read -rsp "  Passphrase: " pass
+        echo ""
+        TOKEN=$(decrypt_token "$pass" || echo "")
+        if [[ -n "$TOKEN" ]]; then
+            success "Token decrypted"
+            return 0
+        fi
+        ((attempts++))
+        warn "Wrong passphrase ($attempts/3)"
+    done
+    error "Too many attempts"
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
+# Token handling
 # -----------------------------------------------------------------------------
 
 show_token_help() {
@@ -150,13 +221,14 @@ show_token_help() {
   STORAGE OPTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Environment variable (session):
-      export ZENODO_TOKEN="your_token"
+  This script checks for tokens in order:
 
-  Dotfile (persistent):
-      echo "your_token" > ~/.zenodo_token && chmod 600 ~/.zenodo_token
+    1. $ZENODO_TOKEN environment variable
+    2. ~/.zenodo_token.enc (encrypted, passphrase required)
+    3. ~/.zenodo_token (plaintext, chmod 600)
+    4. Interactive prompt
 
-  This script checks: $ZENODO_TOKEN → ~/.zenodo_token → prompt
+  Encrypted storage uses AES-256-CBC with PBKDF2 key derivation.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -165,12 +237,21 @@ EOF
 }
 
 get_token() {
+    # 1. Environment variable
     if [[ -n "${ZENODO_TOKEN:-}" ]]; then
         TOKEN="$ZENODO_TOKEN"
         info "Using \$ZENODO_TOKEN"
         return 0
     fi
 
+    # 2. Encrypted file
+    if [[ -f "$TOKEN_FILE_ENC" ]]; then
+        info "Found encrypted token"
+        load_token_encrypted
+        return 0
+    fi
+
+    # 3. Plaintext file
     if [[ -f "$TOKEN_FILE" ]]; then
         local perms
         perms=$(stat -c %a "$TOKEN_FILE" 2>/dev/null || stat -f %Lp "$TOKEN_FILE" 2>/dev/null)
@@ -182,13 +263,14 @@ get_token() {
         return 0
     fi
 
+    # 4. Prompt
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${CYAN}  Token Required${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo "  Get one: https://zenodo.org/account/settings/applications/"
-    echo "  Select ${BOLD}0${NC} from menu for detailed instructions."
+    echo "  Select ${BOLD}0${NC} from menu for detailed help."
     echo ""
 
     read -rsp "  Token (hidden): " TOKEN
@@ -210,21 +292,35 @@ get_token() {
     success "Valid"
     echo ""
 
-    read -rp "  Save to $TOKEN_FILE? [y/N]: " save
-    if [[ "${save,,}" == "y" ]]; then
-        echo "$TOKEN" > "$TOKEN_FILE"
-        chmod 600 "$TOKEN_FILE"
-        success "Saved"
-    fi
+    echo "  Save token?"
+    echo "    1) Encrypted (passphrase each use) ${GREEN}← recommended${NC}"
+    echo "    2) Plaintext (chmod 600)"
+    echo "    3) Don't save"
+    echo ""
+    read -rp "  Choice [1]: " save_choice
+    save_choice="${save_choice:-1}"
+
+    case "$save_choice" in
+        1) save_token_encrypted "$TOKEN" ;;
+        2) save_token_plaintext "$TOKEN" ;;
+        3) info "Token not saved" ;;
+        *) save_token_encrypted "$TOKEN" ;;
+    esac
 }
 
 remove_token() {
+    local removed=0
+    if [[ -f "$TOKEN_FILE_ENC" ]]; then
+        rm -f "$TOKEN_FILE_ENC"
+        success "Removed $TOKEN_FILE_ENC"
+        ((removed++))
+    fi
     if [[ -f "$TOKEN_FILE" ]]; then
         rm -f "$TOKEN_FILE"
         success "Removed $TOKEN_FILE"
-    else
-        info "No stored token"
+        ((removed++))
     fi
+    [[ $removed -eq 0 ]] && info "No stored token"
 }
 
 # -----------------------------------------------------------------------------

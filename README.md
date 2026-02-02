@@ -1,6 +1,6 @@
 # zenodo_dl
 
-Download files from Zenodo repositories (public or your restricted/draft).
+Download files from Zenodo repositories (public, restricted, or draft).
 
 ## Quick Start
 
@@ -43,26 +43,41 @@ For restricted or draft records, you need a Personal Access Token:
 
 The script looks for tokens in order:
 1. `$ZENODO_TOKEN` environment variable
-2. `~/.zenodo_token` file
-3. Interactive prompt
+2. `~/.zenodo_token.enc` (encrypted, passphrase required)
+3. `~/.zenodo_token` (plaintext, chmod 600)
+4. Interactive prompt
+
+### Encrypted storage (default)
+
+When saving a token, you'll be prompted to choose:
+
+```
+Save token?
+  1) Encrypted (passphrase each use) ← recommended
+  2) Plaintext (chmod 600)
+  3) Don't save
+```
+
+Encrypted tokens use AES-256-CBC with PBKDF2 key derivation via openssl.
 
 ## Requirements
 
 - `curl`
 - `jq`
+- `openssl` (for token encryption)
 
 ```bash
 # Debian/Ubuntu
-sudo apt install curl jq
+sudo apt install curl jq openssl
 
-# macOS
-brew install curl jq
+# macOS (usually pre-installed)
+brew install curl jq openssl
 ```
 
 ## Cleanup
 
 ```bash
-./zenodo_dl.sh --uninstall  # removes ~/.zenodo_token
+./zenodo_dl.sh --uninstall  # removes ~/.zenodo_token and ~/.zenodo_token.enc
 rm zenodo_dl.sh             # delete the script
 ```
 
