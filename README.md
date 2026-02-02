@@ -2,6 +2,17 @@
 
 Download files from Zenodo repositories (public, restricted, or draft).
 
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **One-liner** | Run directly via `bash <(curl ...)` — no install needed |
+| **Interactive menu** | List, download, extract — all from one interface |
+| **Encrypted tokens** | AES-256 encryption for stored credentials (default) |
+| **Flexible download** | ZIP archive, individual files, or pattern matching |
+| **Draft support** | Works with unpublished/restricted Zenodo records |
+| **No dependencies** | Just `curl`, `jq`, `openssl` (pre-installed on most systems) |
+
 ## Quick Start
 
 **Run directly (no install):**
@@ -59,6 +70,18 @@ Save token?
 ```
 
 Encrypted tokens use AES-256-CBC with PBKDF2 key derivation via openssl.
+
+### Storing your passphrase
+
+The passphrase protects your Zenodo token at rest. Options for remembering it:
+
+| Method | Pros | Cons |
+|--------|------|------|
+| **Password manager** (1Password, Bitwarden, Dashlane, KeePassXC) | Most secure, syncs across devices | Requires setup |
+| **Memorable phrase** | Nothing to install | Must be unique, not reused |
+| **Written down** (secure location) | Simple, offline | Physical security required |
+
+If passphrase management feels like overkill for your use case, the plaintext option (chmod 600) is still reasonable — it protects against casual access and remote attacks, just not against someone with root access to your machine.
 
 ## Requirements
 
