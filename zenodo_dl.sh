@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-VERSION="1.4.2"
+VERSION="1.4.3"
 API_BASE="https://zenodo.org/api"
 TOKEN_FILE="$HOME/.zenodo_token"
 TOKEN_FILE_ENC="$HOME/.zenodo_token.enc"
@@ -39,6 +39,7 @@ trap cleanup EXIT
 resolve_path() {
     local path="$1"
     path="${path/#\~/$HOME}"
+    path="${path%/}"  # Remove trailing slash
     
     # Warn if path looks like user meant relative but typed absolute
     if [[ "$path" =~ ^/(Documents|Downloads|Desktop|Home|home|tmp)/ ]] && [[ ! -d "$(dirname "$path")" ]]; then
@@ -91,12 +92,12 @@ do_uninstall() {
     if [[ -f "$TOKEN_FILE_ENC" ]]; then
         rm -f "$TOKEN_FILE_ENC"
         success "Removed $TOKEN_FILE_ENC"
-        ((removed++))
+        ((removed++)) || true
     fi
     if [[ -f "$TOKEN_FILE" ]]; then
         rm -f "$TOKEN_FILE"
         success "Removed $TOKEN_FILE"
-        ((removed++))
+        ((removed++)) || true
     fi
     if [[ $removed -eq 0 ]]; then
         info "No token files found"
@@ -210,7 +211,7 @@ load_token_encrypted() {
             success "Token decrypted"
             return 0
         fi
-        ((attempts++))
+        ((attempts++)) || true
         warn "Wrong passphrase ($attempts/3)"
     done
     error "Too many attempts"
@@ -330,12 +331,12 @@ remove_token() {
     if [[ -f "$TOKEN_FILE_ENC" ]]; then
         rm -f "$TOKEN_FILE_ENC"
         success "Removed $TOKEN_FILE_ENC"
-        ((removed++))
+        ((removed++)) || true
     fi
     if [[ -f "$TOKEN_FILE" ]]; then
         rm -f "$TOKEN_FILE"
         success "Removed $TOKEN_FILE"
-        ((removed++))
+        ((removed++)) || true
     fi
     [[ $removed -eq 0 ]] && info "No stored token"
 }
@@ -480,7 +481,7 @@ download_specific() {
                     "$API_BASE/deposit/depositions/$RECORD_ID/files/$f/content" \
                     -o "$outdir/$f" --progress-bar
                 success "$outdir/$f"
-                ((matched++))
+                ((matched++)) || true
             fi
         done <<< "$files"
         [[ $matched -eq 0 ]] && warn "No match: $sel"
