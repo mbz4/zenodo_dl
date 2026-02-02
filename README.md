@@ -40,7 +40,7 @@ sudo curl -fsSL https://raw.githubusercontent.com/mbz4/zenodo-dl/main/zenodo-dl 
 **Or manually:**
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/zenodo-dl.git
+git clone https://github.com/mbz4/zenodo-dl.git
 cd zenodo-dl
 chmod +x zenodo-dl
 sudo mv zenodo-dl /usr/local/bin/  # or add to PATH
