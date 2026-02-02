@@ -124,3 +124,9 @@ To remove: `rm ~/.local/bin/zenodo_dl`
 ## License
 
 Apache 2.0
+
+
+### TODO:
+
+- verify features working
+- debug 404 handling issues
