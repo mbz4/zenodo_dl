@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
 #
-# zenodo_dl.sh — Download files from restricted Zenodo repositories
-#
-# Usage: ./zenodo_dl.sh [RECORD_ID]
-#        If RECORD_ID is not provided, you will be prompted.
-#
-# Repository: https://github.com/mbz4/zenodo_dl
+# zenodo_dl.sh — Download files from Zenodo repositories
+# https://github.com/mbz4/zenodo_dl
 # License: Apache 2.0
 #
 
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 API_BASE="https://zenodo.org/api"
 TOKEN_FILE="$HOME/.zenodo_token"
 TOKEN=""
@@ -38,13 +34,65 @@ error()   { echo -e "${RED}✗${NC}  $*" >&2; }
 cleanup() { TOKEN=""; }
 trap cleanup EXIT
 
+# -----------------------------------------------------------------------------
+# CLI flags
+# -----------------------------------------------------------------------------
+
+show_help() {
+    cat << EOF
+zenodo_dl.sh v${VERSION} — Download files from Zenodo repositories
+
+USAGE
+    ./zenodo_dl.sh [RECORD_ID]     Interactive mode
+    ./zenodo_dl.sh --help          Show this help
+    ./zenodo_dl.sh --uninstall     Remove stored token (~/.zenodo_token)
+
+EXAMPLES
+    ./zenodo_dl.sh                 Prompt for record ID
+    ./zenodo_dl.sh 18428827        Use record ID directly
+    ZENODO_TOKEN=xyz ./zenodo_dl.sh 18428827   Pre-set token
+
+RUN WITHOUT DOWNLOADING
+    bash <(curl -fsSL https://raw.githubusercontent.com/mbz4/zenodo_dl/main/zenodo_dl.sh)
+
+TOKEN
+    For restricted/draft records, get a token from:
+    https://zenodo.org/account/settings/applications/
+    
+    Required scope: deposit:read
+
+MORE INFO
+    https://github.com/mbz4/zenodo_dl
+EOF
+    exit 0
+}
+
+do_uninstall() {
+    echo ""
+    if [[ -f "$TOKEN_FILE" ]]; then
+        rm -f "$TOKEN_FILE"
+        success "Removed $TOKEN_FILE"
+    else
+        info "No token file found at $TOKEN_FILE"
+    fi
+    echo ""
+    info "To fully remove zenodo_dl, just delete the script file."
+    echo "    rm ./zenodo_dl.sh  (or wherever you saved it)"
+    echo ""
+    exit 0
+}
+
+# -----------------------------------------------------------------------------
+# Dependencies
+# -----------------------------------------------------------------------------
+
 check_dependencies() {
     local missing=()
     for cmd in curl jq; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
-        error "Missing dependencies: ${missing[*]}"
+        error "Missing: ${missing[*]}"
         echo "  Install: sudo apt install ${missing[*]}"
         exit 1
     fi
@@ -65,78 +113,50 @@ get_record_id() {
     echo -e "${CYAN}  Zenodo Record ID${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "  Enter the Zenodo record ID. You can find it in the URL:"
+    echo "  Find the record ID in the Zenodo URL:"
     echo ""
-    echo "    https://zenodo.org/records/1234567"
-    echo "                              └──────┘"
-    echo "                              Record ID"
+    echo "    https://zenodo.org/records/${BOLD}1234567${NC}"
+    echo "    https://zenodo.org/uploads/${BOLD}1234567${NC}  (drafts)"
     echo ""
-    echo "  For draft/restricted records, the URL may look like:"
-    echo "    https://zenodo.org/uploads/1234567"
-    echo ""
-    
+
     while true; do
         read -rp "  Record ID: " RECORD_ID
         if [[ "$RECORD_ID" =~ ^[0-9]+$ ]]; then
             break
         else
-            warn "Invalid ID. Please enter numbers only."
+            warn "Numbers only"
         fi
     done
 }
 
 # -----------------------------------------------------------------------------
-# Instructions
+# Token
 # -----------------------------------------------------------------------------
 
-show_instructions() {
+show_token_help() {
     cat << 'EOF'
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  HOW TO GET A ZENODO PERSONAL ACCESS TOKEN (PAT)
+  HOW TO GET A ZENODO TOKEN
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  1. Log in to Zenodo
-     https://zenodo.org/login
-
-  2. Go to Applications settings
-     https://zenodo.org/account/settings/applications/
-
-  3. Under "Personal access tokens", click "+ New token"
-
-  4. Configure the token:
-     • Name: Something descriptive (e.g., "zenodo-dl")
-     • Scopes:
-         ☑ deposit:read   ← Required for restricted/draft records
-         ☐ deposit:write  ← Only if uploading (not needed here)
-
-  5. Click "Create" and COPY THE TOKEN IMMEDIATELY
-     (You won't be able to see it again!)
+  1. Log in:     https://zenodo.org/login
+  2. Settings:   https://zenodo.org/account/settings/applications/
+  3. Click:      + New token
+  4. Scope:      ☑ deposit:read
+  5. Create & copy immediately (shown only once)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  SECURE TOKEN STORAGE
+  STORAGE OPTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  This script checks for tokens in order:
+  Environment variable (session):
+      export ZENODO_TOKEN="your_token"
 
-    1. $ZENODO_TOKEN environment variable (best for CI/scripts)
-    2. ~/.zenodo_token file (convenient for repeated use)
-    3. Interactive prompt (one-time use)
+  Dotfile (persistent):
+      echo "your_token" > ~/.zenodo_token && chmod 600 ~/.zenodo_token
 
-  Environment variable (session only):
-
-      export ZENODO_TOKEN="your_token_here"
-      zenodo-dl 1234567
-
-  Secure dotfile:
-
-      echo "your_token" > ~/.zenodo_token
-      chmod 600 ~/.zenodo_token
-
-  With GPG encryption:
-
-      echo "your_token" | gpg -c -o ~/.zenodo_token.gpg
-      export ZENODO_TOKEN=$(gpg -d ~/.zenodo_token.gpg 2>/dev/null)
+  This script checks: $ZENODO_TOKEN → ~/.zenodo_token → prompt
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -144,14 +164,10 @@ EOF
     read -rp "  Press Enter to continue..."
 }
 
-# -----------------------------------------------------------------------------
-# Token handling
-# -----------------------------------------------------------------------------
-
 get_token() {
     if [[ -n "${ZENODO_TOKEN:-}" ]]; then
         TOKEN="$ZENODO_TOKEN"
-        info "Using token from \$ZENODO_TOKEN"
+        info "Using \$ZENODO_TOKEN"
         return 0
     fi
 
@@ -159,11 +175,10 @@ get_token() {
         local perms
         perms=$(stat -c %a "$TOKEN_FILE" 2>/dev/null || stat -f %Lp "$TOKEN_FILE" 2>/dev/null)
         if [[ "$perms" != "600" ]]; then
-            warn "Fixing insecure permissions on $TOKEN_FILE"
             chmod 600 "$TOKEN_FILE"
         fi
         TOKEN="$(cat "$TOKEN_FILE")"
-        info "Using token from $TOKEN_FILE"
+        info "Using $TOKEN_FILE"
         return 0
     fi
 
@@ -172,16 +187,14 @@ get_token() {
     echo -e "${CYAN}  Token Required${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "  No token found. Select option ${BOLD}0${NC} from the menu for setup instructions."
-    echo ""
-    echo "  Quick: https://zenodo.org/account/settings/applications/"
-    echo "         → New token → check 'deposit:read' → Create → Copy"
+    echo "  Get one: https://zenodo.org/account/settings/applications/"
+    echo "  Select ${BOLD}0${NC} from menu for detailed instructions."
     echo ""
 
-    read -rsp "  Paste token (hidden): " TOKEN
+    read -rsp "  Token (hidden): " TOKEN
     echo ""
 
-    [[ -z "$TOKEN" ]] && { error "No token provided."; exit 1; }
+    [[ -z "$TOKEN" ]] && { error "No token"; exit 1; }
 
     info "Validating..."
     local http_code
@@ -190,18 +203,18 @@ get_token() {
         "$API_BASE/deposit/depositions/$RECORD_ID")
 
     if [[ "$http_code" != "200" ]]; then
-        error "Validation failed (HTTP $http_code). Check token scope and record ID."
+        error "Failed (HTTP $http_code)"
         TOKEN=""
         exit 1
     fi
-    success "Token valid"
+    success "Valid"
     echo ""
 
     read -rp "  Save to $TOKEN_FILE? [y/N]: " save
     if [[ "${save,,}" == "y" ]]; then
         echo "$TOKEN" > "$TOKEN_FILE"
         chmod 600 "$TOKEN_FILE"
-        success "Saved (chmod 600)"
+        success "Saved"
     fi
 }
 
@@ -210,7 +223,7 @@ remove_token() {
         rm -f "$TOKEN_FILE"
         success "Removed $TOKEN_FILE"
     else
-        info "No stored token found"
+        info "No stored token"
     fi
 }
 
@@ -230,18 +243,14 @@ get_record_info() {
 }
 
 list_files() {
-    local info
-    info=$(get_record_info)
-    echo "$info" | jq -r '
-        .files[] | 
+    get_record_info | jq -r '
+        .files[] |
         "\(.filesize // .size | tonumber | . / 1024 / 1024 * 100 | floor / 100) MB\t\(.filename // .key)"
     ' 2>/dev/null | sort -k2
 }
 
 get_file_list() {
-    local info
-    info=$(get_record_info)
-    echo "$info" | jq -r '.files[].filename // .files[].key' 2>/dev/null
+    get_record_info | jq -r '.files[].filename // .files[].key' 2>/dev/null
 }
 
 # -----------------------------------------------------------------------------
@@ -250,38 +259,36 @@ get_file_list() {
 
 download_all() {
     echo ""
-    echo "  Format:"
-    echo "    1) ZIP archive (fast, single file)"
-    echo "    2) Individual files (loose)"
+    echo "  1) ZIP (single file)"
+    echo "  2) Individual files"
     echo ""
-    read -rp "  Choice [1]: " fmt
+    read -rp "  Format [1]: " fmt
     fmt="${fmt:-1}"
 
-    read -rp "  Output directory [.]: " outdir
+    read -rp "  Output dir [.]: " outdir
     outdir="${outdir:-.}"
     outdir="${outdir/#\~/$HOME}"
     mkdir -p "$outdir"
 
     if [[ "$fmt" == "1" ]]; then
         local outfile="$outdir/zenodo_${RECORD_ID}.zip"
-        info "Downloading to $outfile ..."
+        info "Downloading $outfile ..."
 
         curl -L -H "Authorization: Bearer $TOKEN" \
             "$API_BASE/records/$RECORD_ID/files-archive" \
             -o "$outfile" --progress-bar
 
         if file "$outfile" | grep -q "Zip archive"; then
-            success "Downloaded: $outfile ($(du -h "$outfile" | cut -f1))"
+            success "Done: $outfile ($(du -h "$outfile" | cut -f1))"
             echo ""
-            read -rp "  Extract? [y/N]: " extract
-            if [[ "${extract,,}" == "y" ]]; then
+            read -rp "  Extract? [y/N]: " ex
+            if [[ "${ex,,}" == "y" ]]; then
                 read -rp "  Extract to [.]: " exdir
-                exdir="${exdir:-.}"
-                unzip -o "$outfile" -d "$exdir"
-                success "Extracted to $exdir"
+                unzip -o "$outfile" -d "${exdir:-.}"
+                success "Extracted"
             fi
         else
-            error "Download failed:"
+            error "Failed:"
             cat "$outfile"
             rm -f "$outfile"
         fi
@@ -290,25 +297,23 @@ download_all() {
         files=$(get_file_list)
         count=$(echo "$files" | grep -c . || echo 0)
 
-        info "Downloading $count files to $outdir ..."
+        info "Downloading $count files..."
         echo ""
 
-        while IFS= read -r filename; do
-            [[ -z "$filename" ]] && continue
-            printf "\r  [%d/%d] %-50s" "$i" "$count" "$filename"
-
+        while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            printf "\r  [%d/%d] %-45s" "$i" "$count" "$f"
             curl -sL -H "Authorization: Bearer $TOKEN" \
-                "$API_BASE/deposit/depositions/$RECORD_ID/files/$filename/content" \
-                -o "$outdir/$filename" 2>/dev/null || \
+                "$API_BASE/deposit/depositions/$RECORD_ID/files/$f/content" \
+                -o "$outdir/$f" 2>/dev/null || \
             curl -sL -H "Authorization: Bearer $TOKEN" \
-                "$API_BASE/records/$RECORD_ID/files/$filename/content" \
-                -o "$outdir/$filename"
-
+                "$API_BASE/records/$RECORD_ID/files/$f/content" \
+                -o "$outdir/$f"
             ((i++))
         done <<< "$files"
 
         echo ""
-        success "Downloaded $count files"
+        success "Done: $count files"
     fi
 }
 
@@ -316,7 +321,6 @@ download_specific() {
     local files i=1
     files=$(get_file_list)
 
-    info "Available files:"
     echo ""
     while IFS= read -r f; do
         [[ -z "$f" ]] && continue
@@ -325,77 +329,67 @@ download_specific() {
     done <<< "$files"
 
     echo ""
-    read -rp "  File number(s) or pattern: " selection
-    read -rp "  Output directory [.]: " outdir
+    read -rp "  File number(s) or pattern: " sel
+    read -rp "  Output dir [.]: " outdir
     outdir="${outdir:-.}"
     outdir="${outdir/#\~/$HOME}"
     mkdir -p "$outdir"
 
-    if [[ "$selection" =~ ^[0-9\ ]+$ ]]; then
-        for num in $selection; do
-            local filename
-            filename=$(echo "$files" | sed -n "${num}p")
-            if [[ -n "$filename" ]]; then
-                info "Downloading $filename ..."
-                curl -L -H "Authorization: Bearer $TOKEN" \
-                    "$API_BASE/records/$RECORD_ID/files/$filename/content" \
-                    -o "$outdir/$filename" --progress-bar 2>/dev/null || \
-                curl -L -H "Authorization: Bearer $TOKEN" \
-                    "$API_BASE/deposit/depositions/$RECORD_ID/files/$filename/content" \
-                    -o "$outdir/$filename" --progress-bar
-                success "$outdir/$filename"
-            fi
+    if [[ "$sel" =~ ^[0-9\ ]+$ ]]; then
+        for n in $sel; do
+            local f
+            f=$(echo "$files" | sed -n "${n}p")
+            [[ -z "$f" ]] && continue
+            info "$f ..."
+            curl -L -H "Authorization: Bearer $TOKEN" \
+                "$API_BASE/records/$RECORD_ID/files/$f/content" \
+                -o "$outdir/$f" --progress-bar 2>/dev/null || \
+            curl -L -H "Authorization: Bearer $TOKEN" \
+                "$API_BASE/deposit/depositions/$RECORD_ID/files/$f/content" \
+                -o "$outdir/$f" --progress-bar
+            success "$outdir/$f"
         done
     else
         local matched=0
-        while IFS= read -r filename; do
-            [[ -z "$filename" ]] && continue
-            if [[ "$filename" == *"$selection"* ]]; then
-                info "Downloading $filename ..."
+        while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            if [[ "$f" == *"$sel"* ]]; then
+                info "$f ..."
                 curl -L -H "Authorization: Bearer $TOKEN" \
-                    "$API_BASE/records/$RECORD_ID/files/$filename/content" \
-                    -o "$outdir/$filename" --progress-bar 2>/dev/null || \
+                    "$API_BASE/records/$RECORD_ID/files/$f/content" \
+                    -o "$outdir/$f" --progress-bar 2>/dev/null || \
                 curl -L -H "Authorization: Bearer $TOKEN" \
-                    "$API_BASE/deposit/depositions/$RECORD_ID/files/$filename/content" \
-                    -o "$outdir/$filename" --progress-bar
-                success "$outdir/$filename"
+                    "$API_BASE/deposit/depositions/$RECORD_ID/files/$f/content" \
+                    -o "$outdir/$f" --progress-bar
+                success "$outdir/$f"
                 ((matched++))
             fi
         done <<< "$files"
-        [[ $matched -eq 0 ]] && warn "No files matched: $selection"
+        [[ $matched -eq 0 ]] && warn "No match: $sel"
     fi
 }
 
-# -----------------------------------------------------------------------------
-# Extract
-# -----------------------------------------------------------------------------
-
 extract_archive() {
     echo ""
-    read -rp "  Archive path: " archive
-    archive="${archive/#\~/$HOME}"
-
-    [[ ! -f "$archive" ]] && { error "Not found: $archive"; return 1; }
+    read -rp "  Archive path: " arch
+    arch="${arch/#\~/$HOME}"
+    [[ ! -f "$arch" ]] && { error "Not found"; return 1; }
 
     read -rp "  Extract to [.]: " exdir
     exdir="${exdir:-.}"
-    exdir="${exdir/#\~/$HOME}"
     mkdir -p "$exdir"
 
-    local ftype
-    ftype=$(file -b "$archive")
-
-    if [[ "$ftype" == *"Zip"* ]]; then
-        unzip -o "$archive" -d "$exdir"
-    elif [[ "$ftype" == *"gzip"* ]] || [[ "$archive" == *.tar.gz ]] || [[ "$archive" == *.tgz ]]; then
-        tar -xzf "$archive" -C "$exdir"
-    elif [[ "$ftype" == *"tar"* ]] || [[ "$archive" == *.tar ]]; then
-        tar -xf "$archive" -C "$exdir"
+    local t
+    t=$(file -b "$arch")
+    if [[ "$t" == *"Zip"* ]]; then
+        unzip -o "$arch" -d "$exdir"
+    elif [[ "$t" == *"gzip"* || "$arch" == *.tar.gz || "$arch" == *.tgz ]]; then
+        tar -xzf "$arch" -C "$exdir"
+    elif [[ "$t" == *"tar"* || "$arch" == *.tar ]]; then
+        tar -xf "$arch" -C "$exdir"
     else
-        error "Unknown format: $ftype"
-        return 1
+        error "Unknown format"; return 1
     fi
-
     success "Extracted to $exdir"
 }
 
@@ -406,31 +400,29 @@ extract_archive() {
 menu() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  zenodo-dl ${VERSION} — Record ${BOLD}${RECORD_ID}${NC}"
+    echo -e "${CYAN}  zenodo_dl ${VERSION} — Record ${BOLD}${RECORD_ID}${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "    0) Help — token setup instructions"
+    echo "    0) Token help"
     echo "    1) List files"
     echo "    2) Download all"
-    echo "    3) Download specific file(s)"
+    echo "    3) Download specific"
     echo "    4) Extract archive"
     echo ""
-    echo "    t) Remove stored token"
-    echo "    r) Change record ID"
-    echo "    q) Quit"
+    echo "    t) Remove token    r) Change record    q) Quit"
     echo ""
-    read -rp "  → " choice
+    read -rp "  → " c
 
-    case "$choice" in
-        0) show_instructions; menu ;;
+    case "$c" in
+        0) show_token_help; menu ;;
         1) echo ""; list_files | column -t; menu ;;
         2) download_all; menu ;;
         3) download_specific; menu ;;
         4) extract_archive; menu ;;
         t|T) echo ""; remove_token; menu ;;
         r|R) get_record_id; get_token; menu ;;
-        q|Q) echo ""; info "Bye!"; exit 0 ;;
-        *) warn "Invalid option"; menu ;;
+        q|Q) echo ""; exit 0 ;;
+        *) warn "Invalid"; menu ;;
     esac
 }
 
@@ -439,11 +431,16 @@ menu() {
 # -----------------------------------------------------------------------------
 
 main() {
+    # Handle flags
+    case "${1:-}" in
+        -h|--help) show_help ;;
+        --uninstall) do_uninstall ;;
+    esac
+
     echo ""
-    echo -e "${GREEN}┌─────────────────────────────────────────┐${NC}"
-    echo -e "${GREEN}│        zenodo_dl.sh ${VERSION}             │${NC}"
-    echo -e "${GREEN}│   Download from Zenodo repositories     │${NC}"
-    echo -e "${GREEN}└─────────────────────────────────────────┘${NC}"
+    echo -e "${GREEN}┌────────────────────────────────────────┐${NC}"
+    echo -e "${GREEN}│  zenodo_dl.sh ${VERSION}                  │${NC}"
+    echo -e "${GREEN}└────────────────────────────────────────┘${NC}"
 
     check_dependencies
     get_record_id "${1:-}"
