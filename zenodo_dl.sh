@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 API_BASE="https://zenodo.org/api"
 TOKEN_FILE="$HOME/.zenodo_token"
 TOKEN_FILE_ENC="$HOME/.zenodo_token.enc"
@@ -35,6 +35,23 @@ error()   { echo -e "${RED}✗${NC}  $*" >&2; }
 cleanup() { TOKEN=""; }
 trap cleanup EXIT
 
+# Expand ~ and validate path
+resolve_path() {
+    local path="$1"
+    path="${path/#\~/$HOME}"
+    
+    # Warn if path looks like user meant relative but typed absolute
+    if [[ "$path" =~ ^/(Documents|Downloads|Desktop|Home|home|tmp)/ ]] && [[ ! -d "$(dirname "$path")" ]]; then
+        warn "Did you mean ~$path or .$path?"
+        read -rp "  Use $HOME$path instead? [Y/n]: " fix
+        if [[ "${fix,,}" != "n" ]]; then
+            path="$HOME$path"
+        fi
+    fi
+    
+    echo "$path"
+}
+
 # -----------------------------------------------------------------------------
 # CLI flags
 # -----------------------------------------------------------------------------
@@ -50,8 +67,8 @@ USAGE
 
 EXAMPLES
     ./zenodo_dl.sh                 Prompt for record ID
-    ./zenodo_dl.sh 18428827        Use record ID directly
-    ZENODO_TOKEN=xyz ./zenodo_dl.sh 18428827   Pre-set token
+    ./zenodo_dl.sh 12345678        Use record ID directly
+    ZENODO_TOKEN=xyz ./zenodo_dl.sh 12345678   Pre-set token
 
 RUN WITHOUT DOWNLOADING
     bash <(curl -fsSL https://raw.githubusercontent.com/mbz4/zenodo_dl/main/zenodo_dl.sh)
@@ -123,8 +140,8 @@ get_record_id() {
     echo ""
     echo "  Find the record ID in the Zenodo URL:"
     echo ""
-    echo "    https://zenodo.org/records/${BOLD}1234567${NC}"
-    echo "    https://zenodo.org/uploads/${BOLD}1234567${NC}  (drafts)"
+    echo -e "    https://zenodo.org/records/${BOLD}1234567${NC}"
+    echo -e "    https://zenodo.org/uploads/${BOLD}1234567${NC}  (drafts)"
     echo ""
 
     while true; do
@@ -363,8 +380,8 @@ download_all() {
 
     read -rp "  Output dir [.]: " outdir
     outdir="${outdir:-.}"
-    outdir="${outdir/#\~/$HOME}"
-    mkdir -p "$outdir"
+    outdir=$(resolve_path "$outdir")
+    mkdir -p "$outdir" || { error "Cannot create directory"; return 1; }
 
     if [[ "$fmt" == "1" ]]; then
         local outfile="$outdir/zenodo_${RECORD_ID}.zip"
@@ -415,7 +432,7 @@ download_all() {
 
 download_specific() {
     local files i=1
-    files=$(get_file_list)
+    files=$(get_file_list | sort)
 
     echo ""
     while IFS= read -r f; do
@@ -426,10 +443,15 @@ download_specific() {
 
     echo ""
     read -rp "  File number(s) or pattern: " sel
+    # Strip surrounding quotes if present
+    sel="${sel#\"}"
+    sel="${sel%\"}"
+    sel="${sel#\'}"
+    sel="${sel%\'}"
     read -rp "  Output dir [.]: " outdir
     outdir="${outdir:-.}"
-    outdir="${outdir/#\~/$HOME}"
-    mkdir -p "$outdir"
+    outdir=$(resolve_path "$outdir")
+    mkdir -p "$outdir" || { error "Cannot create directory"; return 1; }
 
     if [[ "$sel" =~ ^[0-9\ ]+$ ]]; then
         for n in $sel; do
@@ -468,12 +490,13 @@ download_specific() {
 extract_archive() {
     echo ""
     read -rp "  Archive path: " arch
-    arch="${arch/#\~/$HOME}"
-    [[ ! -f "$arch" ]] && { error "Not found"; return 1; }
+    arch=$(resolve_path "$arch")
+    [[ ! -f "$arch" ]] && { error "Not found: $arch"; return 1; }
 
     read -rp "  Extract to [.]: " exdir
     exdir="${exdir:-.}"
-    mkdir -p "$exdir"
+    exdir=$(resolve_path "$exdir")
+    mkdir -p "$exdir" || { error "Cannot create directory"; return 1; }
 
     local t
     t=$(file -b "$arch")
