@@ -1,6 +1,6 @@
-# zenodo-dl
+# zenodo_dl
 
-A simple CLI tool to download files from Zenodo repositories, including restricted/draft records using Zenodo Personal Access Tokens.
+A simple CLI tool to download files from Zenodo repositories, including restricted/draft records.
 
 ## Features
 
@@ -34,35 +34,35 @@ brew install curl jq
 **One-liner:**
 
 ```bash
-sudo curl -fsSL https://raw.githubusercontent.com/mbz4/zenodo-dl/main/zenodo-dl -o /usr/local/bin/zenodo-dl && sudo chmod +x /usr/local/bin/zenodo-dl
+sudo curl -fsSL https://raw.githubusercontent.com/mbz4/zenodo_dl/main/zenodo_dl.sh -o /usr/local/bin/zenodo_dl && sudo chmod +x /usr/local/bin/zenodo_dl
 ```
 
 **Or manually:**
 
 ```bash
-git clone https://github.com/mbz4/zenodo-dl.git
-cd zenodo-dl
-chmod +x zenodo-dl
-sudo mv zenodo-dl /usr/local/bin/  # or add to PATH
+git clone https://github.com/mbz4/zenodo_dl.git
+cd zenodo_dl
+chmod +x zenodo_dl.sh
+sudo mv zenodo_dl.sh /usr/local/bin/zenodo_dl  # or add to PATH
 ```
 
 **Or just run directly:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mbz4/zenodo-dl/main/zenodo-dl | bash -s -- 1234567
+curl -fsSL https://raw.githubusercontent.com/mbz4/zenodo_dl/main/zenodo_dl.sh | bash -s -- 1234567
 ```
 
 ## Usage
 
 ```bash
 # Interactive mode
-zenodo-dl
+./zenodo_dl.sh
 
 # With record ID
-zenodo-dl 1234567
+./zenodo_dl.sh 1234567
 
 # With pre-set token (for scripts/CI)
-ZENODO_TOKEN="your_token" zenodo-dl 1234567
+ZENODO_TOKEN="your_token" ./zenodo_dl.sh 1234567
 ```
 
 ### Finding your Record ID
