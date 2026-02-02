@@ -107,6 +107,20 @@ brew install curl jq openssl
 rm zenodo_dl.sh             # delete the script
 ```
 
+### Optional: Add to PATH
+
+To run `zenodo_dl` from anywhere:
+```bash
+ln -s "$(pwd)/zenodo_dl.sh" ~/.local/bin/zenodo_dl
+```
+
+If `~/.local/bin` isn't in your PATH, add to `~/.bashrc`:
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+To remove: `rm ~/.local/bin/zenodo_dl`
+
 ## License
 
 Apache 2.0
