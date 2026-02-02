@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-VERSION="1.4.3"
+VERSION="1.4.4"
 API_BASE="https://zenodo.org/api"
 TOKEN_FILE="$HOME/.zenodo_token"
 TOKEN_FILE_ENC="$HOME/.zenodo_token.enc"
@@ -41,13 +41,23 @@ resolve_path() {
     path="${path/#\~/$HOME}"
     path="${path%/}"  # Remove trailing slash
     
-    # Warn if path looks like user meant relative but typed absolute
-    if [[ "$path" =~ ^/(Documents|Downloads|Desktop|Home|home|tmp)/ ]] && [[ ! -d "$(dirname "$path")" ]]; then
-        echo -e "${YELLOW}⚠${NC}  Did you mean ~$path or .$path?" >&2
-        read -rp "  Use $HOME$path instead? [Y/n]: " fix </dev/tty
-        if [[ "${fix,,}" != "n" ]]; then
-            path="$HOME$path"
-        fi
+    # Empty or current dir - return as-is
+    [[ -z "$path" || "$path" == "." ]] && { echo "."; return; }
+    
+    # If absolute path and parent doesn't exist, offer alternatives
+    if [[ "$path" =~ ^/ ]] && [[ ! -d "$(dirname "$path")" ]]; then
+        local basename="${path#/}"
+        echo -e "${YELLOW}⚠${NC}  '$path' requires root. Did you mean:" >&2
+        echo "      1) ./$basename (relative to current dir)" >&2
+        echo "      2) ~/$basename (in home dir)" >&2
+        echo "      3) Keep as-is" >&2
+        read -rp "  Choice [1]: " fix </dev/tty
+        fix="${fix:-1}"
+        case "$fix" in
+            1) path="./$basename" ;;
+            2) path="$HOME/$basename" ;;
+            *) ;;
+        esac
     fi
     
     echo "$path"
