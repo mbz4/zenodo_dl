@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-VERSION="1.4.1"
+VERSION="1.4.2"
 API_BASE="https://zenodo.org/api"
 TOKEN_FILE="$HOME/.zenodo_token"
 TOKEN_FILE_ENC="$HOME/.zenodo_token.enc"
@@ -42,8 +42,8 @@ resolve_path() {
     
     # Warn if path looks like user meant relative but typed absolute
     if [[ "$path" =~ ^/(Documents|Downloads|Desktop|Home|home|tmp)/ ]] && [[ ! -d "$(dirname "$path")" ]]; then
-        warn "Did you mean ~$path or .$path?"
-        read -rp "  Use $HOME$path instead? [Y/n]: " fix
+        echo -e "${YELLOW}⚠${NC}  Did you mean ~$path or .$path?" >&2
+        read -rp "  Use $HOME$path instead? [Y/n]: " fix </dev/tty
         if [[ "${fix,,}" != "n" ]]; then
             path="$HOME$path"
         fi
